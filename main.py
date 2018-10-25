@@ -11,7 +11,6 @@ import search_dir
 import crawling
 import zipfile
 import os
-import time
 
 
 class PatchTread(QThread):
