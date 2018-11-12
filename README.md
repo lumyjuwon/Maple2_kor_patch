@@ -22,3 +22,6 @@ Maple2_kor_patch 프로그램은 스팀(글로벌) 메이플스토리2를 이용
 ## 실행 화면
 ![ex_screenshot](./img/program0.png)
 ![ex_screenshot](./img/program1.png)
+
+## EXE 파일 다운로드
+https://drive.google.com/file/d/1SKGg9-W0hIwANPO5IYXcKHUgiVsz2Abn/view
