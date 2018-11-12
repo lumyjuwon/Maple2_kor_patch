@@ -4,6 +4,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from urllib.request import Request
 from functools import partial
+import threading
 import webbrowser
 import urllib.request
 import sys
@@ -11,6 +12,8 @@ import search_dir
 import crawling
 import zipfile
 import os
+import download
+import time
 
 
 class PatchTread(QThread):
@@ -32,6 +35,8 @@ class PatchTread(QThread):
 
         self.patch_index = patch_index
 
+        self.check_temp_file()
+
     def __del__(self):
         self.wait()
 
@@ -42,37 +47,84 @@ class PatchTread(QThread):
         print("kor_noname_patch_url: " + self.patch_url_list[1])
         print("kor_font_patch_url: " + self.patch_url_list[2])
         print("kor_sound_patch_url: " + self.patch_url_list[3])
+
         self.change_visible.emit(False)
-        self.download()
+        self.download_patch()
         self.change_visible.emit(True)
 
-    def download_url(self, url):
-        self.change_message.emit('파일 다운로드 중 ...')
-        urllib.request.urlretrieve(url, self.setup_directory + "kor_patch.zip",
-                                   reporthook=self.dlProgress)
-        self.patch_process(self.setup_directory)
+    def check_temp_file(self):
+        arr = os.listdir(self.setup_directory)
+        for fileName in arr:
+            if 'crdownload' in fileName:
+                os.remove(self.setup_directory + fileName)
 
+    def get_file_name(self, index):
+        if index == 0:
+            return "Xml.zip"
+        elif index == 1:
+            return "Xml (No Names ver).zip"
+        elif index == 2:
+            return "Xml (Fonts only).zip"
+        elif index == 3:
+            return "Kor_sound2.zip"
 
-    def download(self):
+    def download_patch(self):
         if os.path.exists(self.setup_directory):
             if self.kor_patch.isChecked() and self.kor_sound_patch.isChecked():
-                self.download_url(self.patch_url_list[self.patch_index])
+                self.download_process(self.patch_url_list[self.patch_index], self.get_file_name(self.patch_index))
                 self.kor_sound_boolean = True
-                self.download_url(self.patch_url_list[3])
+                self.download_process(self.patch_url_list[3], self.get_file_name(3))
                 self.progress = 100
                 self.change_value.emit(self.progress)
             elif self.kor_patch.isChecked():
-                self.download_url(self.patch_url_list[self.patch_index])
+                self.download_process(self.patch_url_list[self.patch_index], self.get_file_name(self.patch_index))
                 self.progress = 100
                 self.change_value.emit(self.progress)
             elif self.kor_sound_patch.isChecked():
-                self.download_url(self.patch_url_list[3])
+                self.download_process(self.patch_url_list[3], self.get_file_name(3))
                 self.progress = 100
                 self.change_value.emit(self.progress)
         else:
             self.change_message.emit("Data 폴더를 찾을 수 없습니다.")
 
-    def dlProgress(self, count, blockSize, totalSize):
+    def startDriver(self, url):
+        self.driver = download.Download(self.setup_directory)
+        self.driver.download_url(url)
+
+    def download_process(self, url, fileName):
+        self.driverThread = threading.Thread(target=self.startDriver, args=(url,))
+        self.driverThread.start()
+
+        self.change_message.emit('파일 다운로드 중 ...')
+        self.dlProgress(fileName)
+        # urllib.request.urlretrieve(url, self.setup_directory + "kor_patch.zip", reporthook=self.dlProgress)
+        self.patch_process(self.setup_directory, fileName)
+
+    def dlProgress(self, fileName):
+        while True:
+            if os.path.exists(self.setup_directory + fileName + '.crdownload'):
+                try:
+                    fileSize = os.path.getsize(self.setup_directory + fileName + '.crdownload')
+                    if self.kor_patch.isChecked() and self.kor_sound_patch.isChecked():
+                        if self.kor_sound_boolean:
+                            percent = fileSize / 723775452 * 40 + 40
+                        else:
+                            percent = fileSize / 113775452 * 40
+                    elif self.kor_patch.isChecked():
+                        percent = fileSize / 113775452 * 80
+                    elif self.kor_sound_patch.isChecked():
+                        percent = fileSize / 723775452 * 80
+
+                    if self.progress <= percent:
+                        self.progress += 1
+                        print("progress: ", self.progress)
+                        self.change_value.emit(self.progress)
+                except:
+                    pass
+            elif os.path.exists(self.setup_directory + fileName):
+                break
+
+    """def dlProgress(self, count, blockSize, totalSize):
         # 다운로드 header 파일이 없을 경우 임의로 totalSize를 정해줌
         language_totalSize = 130000000
         sound_totalSize = 680000000
@@ -91,19 +143,25 @@ class PatchTread(QThread):
         while self.progress <= percent:
             self.progress += 1
             print("progress: ", self.progress)
-            self.change_value.emit(self.progress)
+            self.change_value.emit(self.progress)"""
 
-    def patch_process(self, directory_):
+    def patch_process(self, directory_, fileName):
         print("patch_process")
-        try:
-            self.change_message.emit('파일 압축푸는 중 ...')
-            zipfile.ZipFile(directory_+"kor_patch.zip").extractall(directory_)
-            os.remove(directory_ + "kor_patch.zip")
+        while True:
+            if os.path.exists(directory_ + fileName):
+                try:
+                    self.change_message.emit('파일 압축푸는 중 ...')
+                    zipfile.ZipFile(directory_ + fileName).extractall(directory_)
+                    os.remove(directory_ + fileName)
 
-            self.change_message.emit('패치 완료 !')
-        except:
-            self.change_message.emit('패치 에러')
-            return -1
+                    self.change_message.emit('패치 완료 !')
+                    self.driver.close_dirver()
+                    break
+                except Exception as ex:
+                    print(ex)
+                    self.change_message.emit('패치 에러')
+                    self.driver.close_dirver()
+                    return -1
 
 
 form_class = uic.loadUiType("maplestory2.ui")[0]
@@ -112,12 +170,13 @@ form_class = uic.loadUiType("maplestory2.ui")[0]
 class MyWindow(QMainWindow, form_class):
     def __init__(self):
         super().__init__()
-        self.setWindowIcon(QIcon('icon.png'))
-        self.version = "1.01"
-        self.kor_patch_url = "https://drive.google.com/uc?export=download&id=1tw1_tzCViJkiXsrRepdwBuYK3g-KMJwF"
+        self.setWindowIcon(QIcon('icon.ico'))
+        self.version = "1.1"
+
+        self.kor_patch_url = "https://drive.google.com/uc?export=download&confirm=G6Wh&id=1tw1_tzCViJkiXsrRepdwBuYK3g-KMJwF"
         self.kor_noname_patch_url = "https://drive.google.com/uc?export=download&id=1yfXf--tfYAzvth9OWhCuEj3yAVTepMNt"
         self.kor_font_patch_url = "https://drive.google.com/uc?export=download&id=1yNuTQSSSpnyU6h_udILEAwQuWFkXLNO6"
-        self.kor_sound_patch_url = "https://www.dropbox.com/s/igfcrtkqcphivlb/Kor_sound2.zip?dl=1"
+        self.kor_sound_patch_url = "https://drive.google.com/uc?id=1tn3KmCykFqw-qG6Nb55EBRlAJYFzL1kN&export=download"
         self.patch_url_list = [self.kor_patch_url, self.kor_noname_patch_url, self.kor_font_patch_url, self.kor_sound_patch_url]
 
         self.option_url = "https://drive.google.com/uc?authuser=0&id=14WlWEWAI-wyEQ3TEBqw13H-GJaPKlOTx&export=download"
@@ -229,7 +288,7 @@ class MyWindow(QMainWindow, form_class):
         for i in file.readlines():
             list.append(i)
 
-        version = list[0][0:3]
+        version = list[0]
         compulsion_update = list[1]
         print("This Program Verrsion: " + self.version + "\nNew Version: " + version + "\n필수 업데이트: " + compulsion_update)
         file.close()
